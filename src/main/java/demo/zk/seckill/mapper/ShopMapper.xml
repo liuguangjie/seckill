@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="demo.zk.seckill.mapper.ShopMapper">
+
+
+    <select id="selectShopItemList" resultType="demo.zk.seckill.entity.ShopItem">
+        select seckill_id as id, name, number as num
+         from sk_shop
+    </select>
+    <update id="updateShopItem" parameterType="demo.zk.seckill.entity.ShopItem">
+        update sk_shop set number = #{num} where seckill_id = #{id}
+    </update>
+</mapper>

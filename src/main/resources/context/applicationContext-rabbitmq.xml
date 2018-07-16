@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:rabbit="http://www.springframework.org/schema/rabbit"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd
+        http://www.springframework.org/schema/rabbit http://www.springframework.org/schema/rabbit/spring-rabbit.xsd"
+>
+
+    <description>spring 整合 rabbitmq 列子</description>
+
+    <!--配置connection-factory，指定连接rabbit server参数 -->
+    <rabbit:connection-factory id="connectionFactory"
+                               host="${rabbit.connect.host}" port="${rabbit.connect.port}" username="${rabbit.connect.username}"
+                               password="${rabbit.connect.password}" channel-cache-size="${rabbit.connect.channelCacheSize}"
+                               publisher-returns="true" publisher-confirms="true"/>
+
+    <!--通过指定下面的admin信息，当前producer中的exchange和queue会在rabbitmq服务器上自动生成 -->
+    <rabbit:admin connection-factory="connectionFactory" />
+    <rabbit:template id="amqpTemplate" connection-factory="connectionFactory" />
+
+
+    <!--定义queue  说明：durable:是否持久化
+    exclusive: 仅创建者可以使用的私有队列，断开后自动删除
+    auto_delete: 当所有消费客户端连接断开后，是否自动删除队列
+
+       这行配置相当于代码:
+            channel.queueDeclare(queueName, true, false, false, null);
+    -->
+    <rabbit:queue name="mq.shop" durable="true" auto-delete="false" exclusive="false" />
+
+
+
+    <!--定义direct-exchange
+        这几行配置相当于代码:
+            channel.exchangeDeclare(EXCHANGE_NAME, "direct");
+            channel.basicPublish(EXCHANGE_NAME, key, null, message.getBytes());
+    -->
+    <rabbit:direct-exchange name="mq.shop.exchange" durable="true" auto-delete="false" auto-declare="true">
+        <rabbit:bindings>
+            <!-- queue 队列名称  key 路由规则标识-->
+            <rabbit:binding queue="mq.shop" key="mq.shop.send"/>
+        </rabbit:bindings>
+    </rabbit:direct-exchange>
+
+    <!-- 消费者 配置 -->
+    <bean id="rabbitMqMessageCall" class="demo.zk.seckill.rabbitma.RabbitMqMessageCall">
+        <property name="seckillService" ref="seckillServiceImpl"/>
+        <property name="amqpTemplate" ref="amqpTemplate"/>
+    </bean>
+
+    <rabbit:listener-container connection-factory="connectionFactory">
+        <rabbit:listener ref="rabbitMqMessageCall" queues="mq.shop" response-routing-key="mq.shop.send"/>
+    </rabbit:listener-container>
+
+
+
+</beans>
