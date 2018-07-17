@@ -2,9 +2,10 @@
 <beans xmlns="http://www.springframework.org/schema/beans"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:redisson="http://redisson.org/schema/redisson"
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
-        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd"
-default-lazy-init="true">
+        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd
+        http://redisson.org/schema/redisson http://redisson.org/schema/redisson/redisson.xsd">
 
     <description>Spring公共配置</description>
 
@@ -91,6 +92,43 @@ default-lazy-init="true">
         <property name="jedisCluster" ref="jedisCluster"></property>
     </bean>-->
 
+    <!-- redisson 单机配置
+     参考 https://github.com/redisson/redisson/wiki/14.-%E7%AC%AC%E4%B8%89%E6%96%B9%E6%A1%86%E6%9E%B6%E6%95%B4%E5%90%88
+     -->
+    <redisson:client id="redissonClient" >
+        <redisson:single-server address="${redisson.host}" connection-pool-size="${redis.pool.maxTotal}"
+        password="${redis.pool.password}" connection-minimum-idle-size="${redis.pool.maxIdle}"/>
+
+    </redisson:client>
+
+    <bean id="lockInfo_" class="demo.zk.seckill.redis.lock.LockInfo">
+        <property name="name" value="_myLock_"/>
+        <property name="waitTime" value="3"/>
+        <property name="leaseTime" value="10"/>
+
+    </bean>
+
+    <!-- 公平锁 -->
+    <bean id="fairLock" class="demo.zk.seckill.redis.lock.FairLock">
+        <constructor-arg index="0" name="redissonClient" ref="redissonClient"/>
+        <property name="lockInfo" ref="lockInfo_"/>
+    </bean>
+
+    <!-- 重入锁 -->
+    <bean id="reentrantLock" class="demo.zk.seckill.redis.lock.ReentrantLock">
+        <constructor-arg index="0" name="redissonClient" ref="redissonClient"/>
+        <property name="lockInfo" ref="lockInfo_"/>
+    </bean>
+    <!-- 读锁 -->
+    <bean id="readLock" class="demo.zk.seckill.redis.lock.ReadLock">
+        <constructor-arg index="0" name="redissonClient" ref="redissonClient"/>
+        <property name="lockInfo" ref="lockInfo_"/>
+    </bean>
+    <!-- 写锁 -->
+    <bean id="writeLock" class="demo.zk.seckill.redis.lock.WriteLock">
+        <constructor-arg index="0" name="redissonClient" ref="redissonClient"/>
+        <property name="lockInfo" ref="lockInfo_"/>
+    </bean>
 
 
 </beans>

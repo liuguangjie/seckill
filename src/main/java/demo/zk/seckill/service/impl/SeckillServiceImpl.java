@@ -3,10 +3,12 @@ package demo.zk.seckill.service.impl;
 import demo.zk.seckill.entity.ShopItem;
 import demo.zk.seckill.entity.User;
 import demo.zk.seckill.mapper.ShopMapper;
-import demo.zk.seckill.redis.CacheMangerJedisSingleAdapter;
+import demo.zk.seckill.redis.lock.ReentrantLock;
 import demo.zk.seckill.service.SeckillService;
 import demo.zk.seckill.util.ZookeeperLock;
 import demo.zk.seckill.view.Result;
+import org.redisson.api.RScoredSortedSet;
+import org.redisson.api.RedissonClient;
 import org.springframework.amqp.core.AmqpTemplate;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,12 +31,16 @@ public class SeckillServiceImpl implements SeckillService , InitializingBean {
     @Autowired
     private ShopMapper shopMapper;
 
-    @Autowired
-    protected CacheMangerJedisSingleAdapter cacheManger;
-
     /** rabbitma 异步消息 */
     @Autowired
     private AmqpTemplate amqpTemplate;
+
+    /**redisson 重入锁 */
+    @Autowired
+    private ReentrantLock reentrantLock;
+
+    @Autowired
+    private RedissonClient redissonClient;
 
     /**
      * zookeeper 有客户端实现 分布式锁了 只需要copy  copy
@@ -43,25 +49,25 @@ public class SeckillServiceImpl implements SeckillService , InitializingBean {
         boolean isLoadLock = false;
         Jedis jedis = null;
         try {
-            isLoadLock = ZookeeperLock.getLock();
+            //isLoadLock = ZookeeperLock.getLock();
+            isLoadLock = reentrantLock.acquire();
             if (isLoadLock) {
                 /**
                  * 获得锁的线程, 根据业务处理
                  * 处理场景:
                  * 1.通过分布式缓存 更新库存
                  */
-                jedis = cacheManger.getJedis();
-                String itemId = user.getItemId();
+                Integer itemId = Integer.parseInt(user.getItemId());
                 /**获取库存*/
-                Double num = jedis.zscore("shop", itemId);
+                RScoredSortedSet<Integer> scoredSortedSet =
+                        redissonClient.getScoredSortedSet("shop");
+                Double num = scoredSortedSet.getScore(itemId);
+
                 if (num.intValue() == 0) {
                     return new Result("200", "已经卖完了, 试试其他商品吧");
                 }
-
-                Map<String, Double> members = new LinkedHashMap<String, Double>();
-                members.put(itemId, --num);
                 /**更新库存*/
-                jedis.zadd("shop", members);
+                scoredSortedSet.add(--num, itemId);
                 /**2.rabbitma异步操作 数据库, 数据量稍大 分库, 每一个数据库对应 一个路由规则*/
                 String message = "id=" + itemId + ":" + "num=" + num.intValue();
                 amqpTemplate.convertAndSend("mq.shop.exchange",
@@ -87,7 +93,8 @@ public class SeckillServiceImpl implements SeckillService , InitializingBean {
         } finally {
             /***释放锁*/
             if (isLoadLock) {
-                ZookeeperLock.releaseLock();
+                //ZookeeperLock.releaseLock();
+                reentrantLock.release();
             }
             if (jedis != null) {
                 jedis.close();
@@ -114,15 +121,14 @@ public class SeckillServiceImpl implements SeckillService , InitializingBean {
     public void afterPropertiesSet() throws Exception {
 
         List<ShopItem> shopItemList = listShopItem();
-
-        Map<String, Double> members = new LinkedHashMap<String, Double>();
+        RScoredSortedSet<Integer> scoredSortedSet =
+                redissonClient.getScoredSortedSet("shop");
         for (ShopItem item : shopItemList) {
 
-            members.put(item.getId().toString(),
-                    item.getNum().doubleValue());
+            scoredSortedSet.add(item.getNum(), item.getId());
         }
 
-        cacheManger.zadd("shop", members);
+
     }
 
 }
